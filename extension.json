@@ -5,7 +5,7 @@
   "description": "",
   "name": "Temperature Extractor",
   "extensions": {
-    "Temperature": {
+    "Seesaw Reader": {
       "type": "HighLevelAnalyzer",
       "entryPoint": "SeesawHLA.Hla"
     }

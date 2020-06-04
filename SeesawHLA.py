@@ -1,6 +1,7 @@
 # High Level Analyzer
 # For more information and documentation, please go to https://github.com/saleae/logic2-examples
 from typing import List
+from enum import Enum
 
 base_addresses = {
     0x00: 'STATUS_BASE',
@@ -18,16 +19,28 @@ base_addresses = {
     0x11: 'ENCODER_BASE',
 }
 
+TEMP_UNITS = 'Temp Units'
+
+
+class Action(Enum):
+    Temperature = 'Temperature'
+    Capacitive = 'Capacitive'
+    HW_ID = 'HW_ID'
+    VERSION = 'VERSION'
+    OPTIONS = 'OPTIONS'
+    SWRST = 'SWRST'
+
+
 actions = {
     'TOUCH_BASE': {
-        0x10: 'Capacitive',
+        0x10: Action.Capacitive,
     },
     'STATUS_BASE': {
-        0x01: 'HW_ID',
-        0x02: 'VERSION',
-        0x03: 'OPTIONS',
-        0x04: 'Temperature',
-        0x7F: 'SWRST',
+        0x01: Action.HW_ID,
+        0x02: Action.VERSION,
+        0x03: Action.OPTIONS,
+        0x04: Action.Temperature,
+        0x7F: Action.SWRST,
     }
 }
 
@@ -35,7 +48,7 @@ actions = {
 class WriteTransaction:
     NOT_FOUND = 'NotFound'
     base: str = ''
-    action: int = ''
+    action: Action = None
     start_time: float
     end_time: float
 
@@ -48,10 +61,13 @@ class WriteTransaction:
             'start_time': self.start_time,
             'end_time': self.end_time,
             'data': {
-                'value': self.action
+                'value': self.action.name if self.action else 'Unknown'
             }
         }
         return new_frame
+
+
+FORMATTED_ACTIONS = [Action.Temperature]
 
 
 class ReadTransaction:
@@ -61,18 +77,26 @@ class ReadTransaction:
     address: int
     data: int = 0
     action: str
+    settings: dict
 
-    def __init__(self, start_time, action: str):
+    def __init__(self, start_time, action: Action, settings):
         self.start_time = start_time
         self.action = action
+        self.settings = settings
 
     def create_frame(self):
+        value = self.data
+        if self.action == Action.Temperature:
+            value = value / 2 ** 16
+            if self.settings.get(TEMP_UNITS, 'C') == 'F':
+                value = value * (9 / 5) + 32
+
         new_frame = {
-            'type': 'default',
+            'type': self.action.name if self.action in FORMATTED_ACTIONS else 'default',
             'start_time': self.start_time,
             'end_time': self.end_time,
             'data': {
-                'value': self.data
+                'value': '{:.2f}'.format(value)
             }
         }
         return new_frame
@@ -83,7 +107,7 @@ class Hla():
     read_transaction: ReadTransaction = None
     last_frame: dict = None
     write_transaction: WriteTransaction = None
-    TEMP_UNITS = 'Temp Units'
+    settings = dict()
 
     def __init__(self):
         '''
@@ -105,16 +129,15 @@ class Hla():
     def set_settings(self, settings):
         '''
         '''
-
-        if 'Temp units' in settings:
-            print(settings['Units'])
-            # You can do something with the number setting here
-            pass
+        self.settings = settings
 
         return {
             'result_types': {
                 'default': {
                     'format': '{{data.value}}'
+                },
+                Action.Temperature.name: {
+                    'format': '{{data.value}} ' + settings.get(TEMP_UNITS, 'C')
                 }
             }
         }
@@ -137,7 +160,8 @@ class Hla():
             self.is_read = (value & 0x01) == 1
             if self.is_read:
                 if (self.write_transaction):
-                    self.read_transaction = ReadTransaction(frame['start_time'], self.write_transaction.action)
+                    self.read_transaction = ReadTransaction(
+                        frame['start_time'], self.write_transaction.action, self.settings)
                 self.write_transaction = None
             else:
                 self.write_transaction = WriteTransaction(frame['start_time'])
@@ -155,7 +179,7 @@ class Hla():
                 elif self.write_transaction.base != WriteTransaction.NOT_FOUND:
                     current_actions = actions.get(self.write_transaction.base)
                     if current_actions:
-                        self.write_transaction.action = current_actions.get(value, WriteTransaction.NOT_FOUND)
+                        self.write_transaction.action = current_actions.get(value)
 
             self.last_frame = frame
         else:
