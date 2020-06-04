@@ -2,6 +2,7 @@
 # For more information and documentation, please go to https://github.com/saleae/logic2-examples
 from typing import List
 from enum import Enum
+from base_i2c_filter import BaseI2CFilter
 
 base_addresses = {
     0x00: 'STATUS_BASE',
@@ -56,12 +57,13 @@ class WriteTransaction:
         self.start_time = start_time
 
     def create_frame(self):
+        value = self.action.name if self.action else 'Unknown'
         new_frame = {
             'type': 'default',
             'start_time': self.start_time,
             'end_time': self.end_time,
             'data': {
-                'value': self.action.name if self.action else 'Unknown'
+                'value': value
             }
         }
         return new_frame
@@ -102,50 +104,50 @@ class ReadTransaction:
         return new_frame
 
 
-class Hla():
-    is_read: bool = False
+class Hla(BaseI2CFilter):
     read_transaction: ReadTransaction = None
     last_frame: dict = None
     write_transaction: WriteTransaction = None
     settings = dict()
 
     def __init__(self):
-        '''
-        '''
-        pass
+        super().__init__()
 
     def get_capabilities(self):
         '''
         '''
-        return {
-            'settings': {
-                TEMP_UNITS: {
-                    'type': 'choices',
-                    'choices': ('C', 'F')
-                }
+        capabilities = super().get_capabilities()
+        settings = {
+            TEMP_UNITS: {
+                'type': 'choices',
+                'choices': ('C', 'F')
             }
         }
+        capabilities['settings'] = {**capabilities['settings'], **settings}
+        return capabilities
 
     def set_settings(self, settings):
         '''
         '''
+        ret_value = super().set_settings(settings)
         self.settings = settings
 
-        return {
-            'result_types': {
-                'default': {
-                    'format': '{{data.value}}'
-                },
-                Action.Temperature.name: {
-                    'format': '{{data.value}} ' + settings.get(TEMP_UNITS, 'C')
-                }
+        result_types = {
+            'default': {
+                'format': '{{data.value}}'
+            },
+            Action.Temperature.name: {
+                'format': '{{data.value}} ' + settings.get(TEMP_UNITS, 'C')
             }
         }
+        ret_value['result_types'] = {**ret_value['result_types'], **result_types}
+        return ret_value
 
     def decode(self, frame):
-        '''
-        '''
-        value = None
+        frame = super().decode(frame)
+        if not frame:
+            return
+
         if frame['type'] == 'address':
             new_frame = None
             if self.read_transaction:
@@ -156,8 +158,7 @@ class Hla():
                 self.write_transaction.end_time = self.last_frame.get('end_time')
                 new_frame = self.write_transaction.create_frame()
 
-            value = frame['data']['address'][0]
-            self.is_read = (value & 0x01) == 1
+            value = frame['data']['value']
             if self.is_read:
                 if (self.write_transaction):
                     self.read_transaction = ReadTransaction(
@@ -169,11 +170,13 @@ class Hla():
             return new_frame
 
         elif frame['type'] == 'data':
-            value = frame.get('data').get('data')[0]
+            value = frame['data']['value']
             if self.is_read:
                 if self.read_transaction:
                     self.read_transaction.data = (self.read_transaction.data << 8) | value
             else:
+                if not self.write_transaction:
+                    return None
                 if not self.write_transaction.base:
                     self.write_transaction.base = base_addresses.get(value, WriteTransaction.NOT_FOUND)
                 elif self.write_transaction.base != WriteTransaction.NOT_FOUND:
