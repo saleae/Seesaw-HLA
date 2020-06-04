@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "apiVersion": "1.0.0",
+  "author": "Untitled",
+  "description": "",
+  "name": "Temperature Extractor",
+  "extensions": {
+    "Temperature": {
+      "type": "HighLevelAnalyzer",
+      "entryPoint": "SeesawHLA.Hla"
+    }
+  }
+}
