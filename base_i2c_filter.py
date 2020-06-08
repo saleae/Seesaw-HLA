@@ -59,7 +59,7 @@ class BaseI2CFilter():
             address -= read_write_bit
             self.current_address = address
 
-        if self.current_address == self.target_address:
+        if self.current_address != None and self.current_address == self.target_address:
             value = ''
             if frame['type'] in ['address', 'data']:
                 value = frame['data']['address'][0] if frame['type'] == 'address' else frame['data']['data'][0]
